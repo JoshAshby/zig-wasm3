@@ -103,10 +103,10 @@ pub const Error = error{
 pub const Runtime = struct {
     impl: c.IM3Runtime,
 
-    pub fn deinit(this: Runtime) callconv(.Inline) void {
+    pub inline fn deinit(this: Runtime) void {
         c.m3_FreeRuntime(this.impl);
     }
-    pub fn getMemory(this: Runtime, memory_index: u32) callconv(.Inline) ?[]u8 {
+    pub inline fn getMemory(this: Runtime, memory_index: u32) ?[]u8 {
         var size: u32 = 0;
         var mem = c.m3_GetMemory(this.impl, &size, memory_index);
         if (mem) |valid| {
@@ -114,38 +114,38 @@ pub const Runtime = struct {
         }
         return null;
     }
-    pub fn getUserData(this: Runtime) callconv(.Inline) ?*anyopaque {
+    pub inline fn getUserData(this: Runtime) ?*anyopaque {
         return c.m3_GetUserData(this.impl);
     }
 
-    pub fn loadModule(this: Runtime, module: Module) callconv(.Inline) !void {
+    pub inline fn loadModule(this: Runtime, module: Module) !void {
         try mapError(c.m3_LoadModule(this.impl, module.impl));
     }
 
-    pub fn findFunction(this: Runtime, function_name: [:0]const u8) callconv(.Inline) !Function {
+    pub inline fn findFunction(this: Runtime, function_name: [:0]const u8) !Function {
         var func = Function{ .impl = undefined };
         try mapError(c.m3_FindFunction(&func.impl, this.impl, function_name.ptr));
         return func;
     }
-    pub fn printRuntimeInfo(this: Runtime) callconv(.Inline) void {
+    pub inline fn printRuntimeInfo(this: Runtime) void {
         c.m3_PrintRuntimeInfo(this.impl);
     }
     pub const ErrorInfo = c.M3ErrorInfo;
-    pub fn getErrorInfo(this: Runtime) callconv(.Inline) ErrorInfo {
+    pub inline fn getErrorInfo(this: Runtime) ErrorInfo {
         var info: ErrorInfo = undefined;
         c.m3_GetErrorInfo(this.impl, &info);
         return info;
     }
-    fn span(strz: ?[*:0]const u8) callconv(.Inline) []const u8 {
+    inline fn span(strz: ?[*:0]const u8) []const u8 {
         if (strz) |s| return std.mem.span(s);
         return "nullptr";
     }
-    pub fn printError(this: Runtime) callconv(.Inline) void {
+    pub inline fn printError(this: Runtime) void {
         var info = this.getErrorInfo();
         this.resetErrorInfo();
         std.log.err("Wasm3 error: {s} @ {s}:{d}\n", .{ span(info.message), span(info.file), info.line });
     }
-    pub fn resetErrorInfo(this: Runtime) callconv(.Inline) void {
+    pub inline fn resetErrorInfo(this: Runtime) void {
         c.m3_ResetErrorInfo(this.impl);
     }
 };
@@ -153,23 +153,23 @@ pub const Runtime = struct {
 pub const Function = struct {
     impl: c.IM3Function,
 
-    pub fn getArgCount(this: Function) callconv(.Inline) u32 {
+    pub inline fn getArgCount(this: Function) u32 {
         return c.m3_GetArgCount(this.impl);
     }
-    pub fn getRetCount(this: Function) callconv(.Inline) u32 {
+    pub inline fn getRetCount(this: Function) u32 {
         return c.m3_GetRetCount(this.impl);
     }
-    pub fn getArgType(this: Function, idx: u32) callconv(.Inline) c.M3ValueType {
+    pub inline fn getArgType(this: Function, idx: u32) c.M3ValueType {
         return c.m3_GetArgType(this.impl, idx);
     }
-    pub fn getRetType(this: Function, idx: u32) callconv(.Inline) c.M3ValueType {
+    pub inline fn getRetType(this: Function, idx: u32) c.M3ValueType {
         return c.m3_GetRetType(this.impl, idx);
     }
     /// Call a function, using a provided tuple for arguments.
     /// TYPES ARE NOT VALIDATED. Be careful
     /// TDOO: Test this! Zig has weird symbol export issues with wasm right now,
     ///       so I can't verify that arguments or return values are properly passes!
-    pub fn call(this: Function, comptime RetType: type, args: anytype) callconv(.Inline) !RetType {
+    pub inline fn call(this: Function, comptime RetType: type, args: anytype) !RetType {
         if (this.getRetCount() > 1) {
             return error.TooManyReturnValues;
         }
@@ -200,7 +200,7 @@ pub const Function = struct {
         inline while (i < count) : (i += 1) {
             const ArgType = @TypeOf(args[i]);
             if (comptime (isSandboxPtr(ArgType) or isOptSandboxPtr(ArgType))) {
-                if(pointer_values.len > 0) {
+                if (pointer_values.len > 0) {
                     pointer_values[ptr_i] = toLocalPtr(args[i]);
                     arg_arr[i] = @ptrCast(?*const anyopaque, &pointer_values[ptr_i]);
                     ptr_i += 1;
@@ -247,15 +247,14 @@ pub const Function = struct {
 
     /// Don't free this, it's a member of the Function.
     /// Returns a generic name if the module is unnamed, such as "<unnamed>"
-    pub fn getName(this: Function) callconv(.Inline) ![:0]const u8 {
+    pub inline fn getName(this: Function) ![:0]const u8 {
         const name = try mapError(c.m3_GetFunctionName(this.impl));
         return std.mem.spanZ(name);
     }
 
-    pub fn getModule(this: Function) callconv(.Inline) Module {
-        return .{.impl = c.m3_GetFunctionModule(this.impl)};
+    pub inline fn getModule(this: Function) Module {
+        return .{ .impl = c.m3_GetFunctionModule(this.impl) };
     }
-
 };
 
 fn isSandboxPtr(comptime T: type) bool {
@@ -287,16 +286,16 @@ pub fn SandboxPtr(comptime T: type) type {
         host_ptr: *T,
         const Self = @This();
 
-        pub fn localPtr(this: Self) callconv(.Inline) u32 {
+        pub inline fn localPtr(this: Self) u32 {
             return @intCast(u32, @ptrToInt(this.host_ptr) - this.local_heap);
         }
-        pub fn write(this: Self, val: T) callconv(.Inline) void {
+        pub inline fn write(this: Self, val: T) void {
             std.mem.writeIntLittle(T, std.mem.asBytes(this.host_ptr), val);
         }
-        pub fn read(this: Self) callconv(.Inline) T {
+        pub inline fn read(this: Self) T {
             return std.mem.readIntLittle(T, std.mem.asBytes(this.host_ptr));
         }
-        fn offsetBy(this: Self, offset: i64) callconv(.Inline) *T {
+        inline fn offsetBy(this: Self, offset: i64) *T {
             return @intToPtr(*T, get_ptr: {
                 if (offset > 0) {
                     break :get_ptr @ptrToInt(this.host_ptr) + @intCast(usize, offset);
@@ -306,17 +305,17 @@ pub fn SandboxPtr(comptime T: type) type {
             });
         }
         /// Offset is in bytes, NOT SAFETY CHECKED.
-        pub fn writeOffset(this: Self, offset: i64, val: T) callconv(.Inline) void {
+        pub inline fn writeOffset(this: Self, offset: i64, val: T) void {
             std.mem.writeIntLittle(T, std.mem.asBytes(this.offsetBy(offset)), val);
         }
         /// Offset is in bytes, NOT SAFETY CHECKED.
-        pub fn readOffset(this: Self, offset: i64) callconv(.Inline) T {
+        pub inline fn readOffset(this: Self, offset: i64) T {
             std.mem.readIntLittle(T, std.mem.asBytes(this.offsetBy(offset)));
         }
         pub usingnamespace if (T == u8)
             struct {
                 /// NOT SAFETY CHECKED.
-                pub fn slice(this: Self, len: u32) callconv(.Inline) []T {
+                pub inline fn slice(this: Self, len: u32) []T {
                     return @ptrCast([*]u8, this.host_ptr)[0..@intCast(usize, len)];
                 }
             }
@@ -402,16 +401,18 @@ pub const Module = struct {
     ///           Not accessible from within wasm, handled by the interpreter.
     ///           If you don't want userdata, pass a void literal {}.
     pub fn linkLibrary(this: Module, library_name: [:0]const u8, comptime library: type, userdata: anytype) !void {
-        comptime var decls = std.meta.declarations(library);
+        comptime var decls = @typeInfo(library).Struct.decls;
+
         inline for (decls) |decl| {
             if (decl.is_pub) {
-                switch (decl.data) {
+                switch (@typeInfo(@TypeOf(@field(library, decl.name)))) {
                     .Fn => |_| {
                         const fn_name_z = comptime get_name: {
                             var name_buf: [decl.name.len:0]u8 = undefined;
                             std.mem.copy(u8, &name_buf, decl.name);
                             break :get_name name_buf;
                         };
+
                         try this.linkRawFunction(library_name, &fn_name_z, @field(library, decl.name), userdata);
                     },
                     else => continue,
@@ -495,7 +496,6 @@ pub const Module = struct {
 
                         const sub_data = if (has_userdata) 1 else 0;
                         inline for (fnti.args[sub_data..]) |arg| {
-
                             if (arg.is_generic) unreachable;
                             type_arr = type_arr ++ @as([]const type, &[1]type{arg.arg_type.?});
                         }
@@ -543,24 +543,24 @@ pub const Module = struct {
     }
 
     /// This is optional.
-    pub fn runStart(this: Module) callconv(.Inline) !void {
+    pub inline fn runStart(this: Module) !void {
         return mapError(c.m3_RunStart(this.impl));
     }
 
     /// Don't free this, it's a member of the Module.
     /// Returns a generic name if the module is unnamed, such as "<unknown>"
-    pub fn getName(this: Module) callconv(.Inline) ![:0]const u8 {
+    pub inline fn getName(this: Module) ![:0]const u8 {
         const name = try mapError(c.m3_GetModuleName(this.impl));
         return std.mem.spanZ(name);
     }
 
-    pub fn getRuntime(this: Module) callconv(.Inline) Runtime {
-        return .{.impl = c.m3_GetModuleRuntime(this.impl)};
+    pub inline fn getRuntime(this: Module) Runtime {
+        return .{ .impl = c.m3_GetModuleRuntime(this.impl) };
     }
 
-    pub fn findGlobal(this: Module, global_name: [:0]const u8) callconv(.Inline) ?Global {
-        if(c.m3_FindGlobal(this.impl, global_name)) |global_ptr| {
-            return Global {.impl = global_ptr};
+    pub inline fn findGlobal(this: Module, global_name: [:0]const u8) ?Global {
+        if (c.m3_FindGlobal(this.impl, global_name)) |global_ptr| {
+            return Global{ .impl = global_ptr };
         }
         return null;
     }
@@ -575,28 +575,28 @@ pub const Global = struct {
     };
     pub const Type = c.M3ValueType;
     impl: c.IM3Global,
-    pub fn getType(this: Global) callconv(.Inline) Type {
+    pub inline fn getType(this: Global) Type {
         return c.m3_GetGlobalType(this.impl);
     }
     pub fn get(this: Global) !Value {
         var tagged_union: c.M3TaggedValue = undefined;
         tagged_union.kind = .None;
         try mapError(c.m3_GetGlobal(this.impl, &tagged_union));
-        return switch(tagged_union.kind) {
+        return switch (tagged_union.kind) {
             .None => Error.GlobalTypeMismatch,
             .Unknown => Error.GlobalTypeMismatch,
-            .Int32 => Value {.Int32 = tagged_union.value.int32},
-            .Int64 => Value {.Int64 = tagged_union.value.int64},
-            .Float32 => Value {.Float32 = tagged_union.value.float32},
-            .Float64 => Value {.Float64 = tagged_union.value.float64},
+            .Int32 => Value{ .Int32 = tagged_union.value.int32 },
+            .Int64 => Value{ .Int64 = tagged_union.value.int64 },
+            .Float32 => Value{ .Float32 = tagged_union.value.float32 },
+            .Float64 => Value{ .Float64 = tagged_union.value.float64 },
         };
     }
     pub fn set(this: Global, value_union: Value) !void {
-        var tagged_union: c.M3TaggedValue = switch(value_union) {
-            .Int32 => |value| .{.kind = .Int32, .value = .{.int32 = value}},
-            .Int64 => |value| .{.kind = .Int64, .value = .{.int64 = value}},
-            .Float32 => |value| .{.kind = .Float32, .value = .{.float32 = value}},
-            .Float64 => |value| .{.kind = .Float64, .value = .{.float64 = value}},
+        var tagged_union: c.M3TaggedValue = switch (value_union) {
+            .Int32 => |value| .{ .kind = .Int32, .value = .{ .int32 = value } },
+            .Int64 => |value| .{ .kind = .Int64, .value = .{ .int64 = value } },
+            .Float32 => |value| .{ .kind = .Float32, .value = .{ .float32 = value } },
+            .Float64 => |value| .{ .kind = .Float64, .value = .{ .float64 = value } },
         };
         return mapError(c.m3_SetGlobal(this.impl, &tagged_union));
     }
@@ -605,16 +605,16 @@ pub const Global = struct {
 pub const Environment = struct {
     impl: c.IM3Environment,
 
-    pub fn init() callconv(.Inline) Environment {
+    pub inline fn init() Environment {
         return .{ .impl = c.m3_NewEnvironment() };
     }
-    pub fn deinit(this: Environment) callconv(.Inline) void {
+    pub inline fn deinit(this: Environment) void {
         c.m3_FreeEnvironment(this.impl);
     }
-    pub fn createRuntime(this: Environment, stack_size: u32, userdata: ?*anyopaque) callconv(.Inline) Runtime {
+    pub inline fn createRuntime(this: Environment, stack_size: u32, userdata: ?*anyopaque) Runtime {
         return .{ .impl = c.m3_NewRuntime(this.impl, stack_size, userdata) };
     }
-    pub fn parseModule(this: Environment, wasm: []const u8) callconv(.Inline) !Module {
+    pub inline fn parseModule(this: Environment, wasm: []const u8) !Module {
         var mod = Module{ .impl = undefined };
         var res = c.m3_ParseModule(this.impl, &mod.impl, wasm.ptr, @intCast(u32, wasm.len));
         try mapError(res);
@@ -622,13 +622,13 @@ pub const Environment = struct {
     }
 };
 
-pub fn yield() callconv(.Inline) !void {
+pub inline fn yield() !void {
     return mapError(c.m3_Yield());
 }
-pub fn printM3Info() callconv(.Inline) void {
+pub inline fn printM3Info() void {
     c.m3_PrintM3Info();
 }
-pub fn printProfilerInfo() callconv(.Inline) void {
+pub inline fn printProfilerInfo() void {
     c.m3_PrintProfilerInfo();
 }
 
